@@ -6937,3 +6937,98 @@ function renderPendingGuidesSimplified() {
 </div>
 </body>
 </html>
+
+<!-- ===== FIXES INYECTADOS (NO BORRAN NADA EXISTENTE) ===== -->
+<script>
+/* Placeholder local sin dependencias externas */
+window.NO_IMG = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
+<svg xmlns='http://www.w3.org/2000/svg' width='600' height='420'>
+  <rect width='100%' height='100%' fill='#0e0e16'/>
+  <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle'
+        fill='#9aa0b5' font-family='Arial' font-size='28'>Sin imagen</text>
+</svg>`);
+
+/* Override seguro de renderProductCards (no toca datos, solo render) */
+window.renderProductCards = function(){
+  const grid = document.getElementById('prodGrid');
+  if (!grid) return;
+
+  const role = (window.me && me.role) ? String(me.role).toUpperCase() : "";
+  const myEmail = (window.me && me.email) ? String(me.email).trim().toLowerCase() : "";
+
+  const qEl = document.getElementById('prod_q');
+  const q = (qEl && qEl.value ? qEl.value : '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .trim();
+
+  let filtered = Array.isArray(window.products) ? window.products.slice() : [];
+
+  if (window.currentProductTab === 'favoritos' && Array.isArray(window.userFavorites)) {
+    filtered = filtered.filter(p => window.userFavorites.includes(p.sku));
+  } else if (window.currentProductTab === 'privados') {
+    filtered = filtered.filter(p => {
+      const raw = String(p.private_to_emails || p.allowed_emails_json || '').trim();
+      if (!raw) return false;
+      let allowed = [];
+      try {
+        if (raw.startsWith('[')) allowed = JSON.parse(raw);
+        else allowed = raw.split(',');
+      } catch(e) {
+        allowed = raw.split(',');
+      }
+      allowed = allowed.map(x => String(x||'').trim().toLowerCase()).filter(Boolean);
+      return myEmail && allowed.includes(myEmail);
+    });
+  }
+
+  if (q) {
+    filtered = filtered.filter(p=>{
+      const hay = [p.title||'', p.sku||'', p.provider_email||'']
+        .join(' ')
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      return hay.includes(q);
+    });
+  }
+
+  grid.innerHTML = '';
+  filtered.forEach(p=>{
+    const isFavorite = Array.isArray(window.userFavorites) && window.userFavorites.includes(p.sku);
+    const div = document.createElement('div');
+    div.className = 'prod-card';
+
+    const imgSrc = (p.image_url && String(p.image_url).trim()) ? p.image_url : window.NO_IMG;
+
+    div.innerHTML = `
+      <img class="prod-img" src="${imgSrc}" onerror="this.src=window.NO_IMG">
+      <div class="prod-body">
+        <div class="prod-title">${p.title||''}</div>
+        <div class="prod-meta">
+          <span class="badge">SKU: ${p.sku||''}</span>
+          <span class="badge">Stock: ${Number(p.stock||0)}</span>
+          ${p.provider_email ? `<span class="badge">Prov: ${p.provider_email}</span>` : ''}
+        </div>
+      </div>
+      <div class="prod-footer">
+        <button class="btn-icon favorite-btn" onclick="toggleFavorite('${p.sku}'); event.stopPropagation()"
+          title="${isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}">
+          ${isFavorite ? '★' : '☆'}
+        </button>
+        <div class="price-info">
+          <span class="muted">Gs ${typeof nf==='function'? nf(p.provider_price_gs||0):(p.provider_price_gs||0)}</span>
+        </div>
+        <div class="action-buttons">
+          <button class="btn small" onclick="openProductModal('${p.sku||''}'); event.stopPropagation()">Ver</button>
+          ${(role==='ADMIN' || role==='DESPACHANTE' || role==='PROVEEDOR')
+            ? `<button class="btn small warning" onclick="openEditProductModal('${p.id}'); event.stopPropagation()">Editar</button>`
+            : ''}
+        </div>
+      </div>
+    `;
+    div.onclick = () => openProductModal(p.sku||'');
+    grid.appendChild(div);
+  });
+};
+</script>
+<!-- ===== FIN FIXES ===== -->
