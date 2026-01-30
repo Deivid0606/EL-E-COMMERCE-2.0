@@ -35,13 +35,15 @@
           try {
             const r = await fetch("/api/gas", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ fn: String(prop), args })
             });
 
-            const data = await r.json();
-
-            if (!data.ok) {
+            const text = await r.text();
+            let data = null;
+            try { data = JSON.parse(text); } catch(e) {
+              data = { ok:false, error: 'Respuesta no JSON desde /api/gas: ' + (text||'').slice(0,200) };
+            }
+if (!data.ok) {
               const err = new Error(data.error || "Error en backend");
               if (onFailure) onFailure(err);
               else console.error(err);
@@ -64,6 +66,16 @@
 
   window.google.script.run = makeRunner();
 })();</script>
+
+<script>
+const NO_IMG = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
+  <svg xmlns='http://www.w3.org/2000/svg' width='600' height='420'>
+    <rect width='100%' height='100%' fill='#0e0e16'/>
+    <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle'
+          fill='#9aa0b5' font-family='Arial' font-size='28'>Sin imagen</text>
+  </svg>
+`);
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
 <style>
@@ -1374,7 +1386,7 @@
             <button class="btn" onclick="closeProductModal()">Cerrar</button>
           </div>
           <div class="pm-head" style="margin-top:8px;">
-            <img id="pm_img" class="pm-img" src="" alt="Producto" onerror="this.src='https://via.placeholder.com/220x220?text=No+image'">
+            <img id="pm_img" class="pm-img" src="" alt="Producto" onerror="this.src='NO_IMG'">
             <div class="pm-info">
               <div class="prod-title" id="pm_title">—</div>
               <div class="pm-row" style="margin-top:8px;">
@@ -2160,7 +2172,7 @@
 
           <!-- === NUEVO: Foto de perfil (preview local) === -->
           <div class="row" style="gap:12px; align-items:flex-start; margin-bottom:8px;">
-            <img id="pf_avatar" class="photo" src="https://via.placeholder.com/88x88?text=Foto" alt="Foto de perfil">
+            <img id="pf_avatar" class="photo" src="NO_IMG" alt="Foto de perfil">
             <div>
               <label>Foto</label>
               <input id="pf_file" type="file" accept="image/*">
@@ -3315,7 +3327,7 @@ vis('navProd', isAuthed && role!=='DELIVERY');
       const tb=document.querySelector('#tblProducts tbody'); if (tb){ tb.innerHTML='';
         rows.forEach(p=>{
           const tr=document.createElement('tr');
-          tr.innerHTML=`<td><img class="thumb" src="${p.image_url||''}" onerror="this.src='https://via.placeholder.com/64'"></td>
+          tr.innerHTML=`<td><img class="thumb" src="${p.image_url||''}" onerror="this.src='NO_IMG'"></td>
             <td>${p.title}</td><td>${p.sku}</td><td class="right">${nf(p.provider_price_gs)}</td><td class="right">${p.stock}</td>
             <td>${p.provider_email || ''}</td>
             <td class="action-buttons">
@@ -3432,7 +3444,7 @@ vis('navProd', isAuthed && role!=='DELIVERY');
      
       // === CORREGIDO: HTML mejorado para la tarjeta de producto ===
       div.innerHTML = `
-        <img class="prod-img" src="${p.image_url||''}" onerror="this.src='https://via.placeholder.com/400x320?text=Sin+imagen'">
+        <img class="prod-img" src="${p.image_url||''}" onerror="this.src='NO_IMG'">
         <div class="prod-body">
           <div class="prod-title">${p.title||''}</div>
           <div class="prod-meta">
@@ -3511,7 +3523,7 @@ vis('navProd', isAuthed && role!=='DELIVERY');
   function openProductModal(sku){
     const p = (products||[]).find(x=>String(x.sku||'')===String(sku));
     if (!p) return;
-    document.getElementById('pm_img').src = p.image_url || 'https://via.placeholder.com/220x220?text=No+image';
+    document.getElementById('pm_img').src = p.image_url || 'NO_IMG';
     document.getElementById('pm_title').textContent = p.title || '—';
     document.getElementById('pm_sku').textContent = p.sku || '—';
     document.getElementById('pm_provider').textContent = nf(p.provider_price_gs||0);
@@ -6937,147 +6949,3 @@ function renderPendingGuidesSimplified() {
 </div>
 </body>
 </html>
-
-<!-- ===== FIXES INYECTADOS (NO BORRAN NADA EXISTENTE) ===== -->
-<script>
-/* Placeholder local sin dependencias externas */
-window.NO_IMG = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
-<svg xmlns='http://www.w3.org/2000/svg' width='600' height='420'>
-  <rect width='100%' height='100%' fill='#0e0e16'/>
-  <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle'
-        fill='#9aa0b5' font-family='Arial' font-size='28'>Sin imagen</text>
-</svg>`);
-
-/* Override seguro de renderProductCards (no toca datos, solo render) */
-window.renderProductCards = function(){
-  const grid = document.getElementById('prodGrid');
-  if (!grid) return;
-
-  const role = (window.me && me.role) ? String(me.role).toUpperCase() : "";
-  const myEmail = (window.me && me.email) ? String(me.email).trim().toLowerCase() : "";
-
-  const qEl = document.getElementById('prod_q');
-  const q = (qEl && qEl.value ? qEl.value : '')
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .trim();
-
-  let filtered = Array.isArray(window.products) ? window.products.slice() : [];
-
-  if (window.currentProductTab === 'favoritos' && Array.isArray(window.userFavorites)) {
-    filtered = filtered.filter(p => window.userFavorites.includes(p.sku));
-  } else if (window.currentProductTab === 'privados') {
-    filtered = filtered.filter(p => {
-      const raw = String(p.private_to_emails || p.allowed_emails_json || '').trim();
-      if (!raw) return false;
-      let allowed = [];
-      try {
-        if (raw.startsWith('[')) allowed = JSON.parse(raw);
-        else allowed = raw.split(',');
-      } catch(e) {
-        allowed = raw.split(',');
-      }
-      allowed = allowed.map(x => String(x||'').trim().toLowerCase()).filter(Boolean);
-      return myEmail && allowed.includes(myEmail);
-    });
-  }
-
-  if (q) {
-    filtered = filtered.filter(p=>{
-      const hay = [p.title||'', p.sku||'', p.provider_email||'']
-        .join(' ')
-        .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      return hay.includes(q);
-    });
-  }
-
-  grid.innerHTML = '';
-  filtered.forEach(p=>{
-    const isFavorite = Array.isArray(window.userFavorites) && window.userFavorites.includes(p.sku);
-    const div = document.createElement('div');
-    div.className = 'prod-card';
-
-    const imgSrc = (p.image_url && String(p.image_url).trim()) ? p.image_url : window.NO_IMG;
-
-    div.innerHTML = `
-      <img class="prod-img" src="${imgSrc}" onerror="this.src=window.NO_IMG">
-      <div class="prod-body">
-        <div class="prod-title">${p.title||''}</div>
-        <div class="prod-meta">
-          <span class="badge">SKU: ${p.sku||''}</span>
-          <span class="badge">Stock: ${Number(p.stock||0)}</span>
-          ${p.provider_email ? `<span class="badge">Prov: ${p.provider_email}</span>` : ''}
-        </div>
-      </div>
-      <div class="prod-footer">
-        <button class="btn-icon favorite-btn" onclick="toggleFavorite('${p.sku}'); event.stopPropagation()"
-          title="${isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}">
-          ${isFavorite ? '★' : '☆'}
-        </button>
-        <div class="price-info">
-          <span class="muted">Gs ${typeof nf==='function'? nf(p.provider_price_gs||0):(p.provider_price_gs||0)}</span>
-        </div>
-        <div class="action-buttons">
-          <button class="btn small" onclick="openProductModal('${p.sku||''}'); event.stopPropagation()">Ver</button>
-          ${(role==='ADMIN' || role==='DESPACHANTE' || role==='PROVEEDOR')
-            ? `<button class="btn small warning" onclick="openEditProductModal('${p.id}'); event.stopPropagation()">Editar</button>`
-            : ''}
-        </div>
-      </div>
-    `;
-    div.onclick = () => openProductModal(p.sku||'');
-    grid.appendChild(div);
-  });
-};
-</script>
-<!-- ===== FIN FIXES ===== -->
-
-
-<script>
-(function(){
-  if (!window.tokenKey) window.tokenKey = 'DCANP_TOKEN';
-  function setWideRanges(){
-    const from='2020-01-01', to='2026-01-30';
-    ['dash_from','of_from','pc_from','sb_from','cl_from','rank_from','rp_from'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=from; });
-    ['dash_to','of_to','pc_to','sb_to','cl_to','rank_to','rp_to'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=to; });
-  }
-  function callAllLoaders(){
-    try{ loadCatalog&&loadCatalog(); }catch(e){}
-    try{ refreshOrders&&refreshOrders(); }catch(e){}
-    try{ loadRates&&loadRates(); }catch(e){}
-    try{ loadClientPrices&&loadClientPrices(); }catch(e){}
-    try{ refreshWallet&&refreshWallet(); }catch(e){}
-    try{ refreshNews&&refreshNews(); }catch(e){}
-    try{ refreshDashboard&&refreshDashboard(); }catch(e){}
-    try{ loadClosuresDetailed&&loadClosuresDetailed(); }catch(e){}
-    try{ if (me?.role==='VENDEDOR' && loadCommissionsForVendor) loadCommissionsForVendor(); else if (loadCommissions) loadCommissions(); }catch(e){}
-    try{ loadRendicionesPagadas&&loadRendicionesPagadas(); }catch(e){}
-    try{ loadDeliveryRankingEnhanced&&loadDeliveryRankingEnhanced(); }catch(e){}
-    try{ loadAssignableOrders&&loadAssignableOrders(); }catch(e){}
-    try{ renderPendingGuidesSimplified&&renderPendingGuidesSimplified(); }catch(e){}
-    try{ loadShopifyInbox&&loadShopifyInbox(); }catch(e){}
-    try{ loadChat&&loadChat(); }catch(e){}
-    try{ onOpenProfile&&onOpenProfile(); }catch(e){}
-    try{ loadUsers&&loadUsers(); }catch(e){}
-  }
-  window.init = function(){
-    const tok=localStorage.getItem(window.tokenKey);
-    if(!tok){ try{ show('auth'); }catch(e){}; return; }
-    google.script.run.withSuccessHandler(data=>{
-      window.me=data.me;
-      try{ setUserBoxUI(me); }catch(e){}
-      try{ setNavForAuth(true, me.role); }catch(e){}
-      const rc=document.getElementById('roleChip'); if(rc) rc.textContent=me.role;
-      setWideRanges();
-      window.products=data.products||[];
-      window.lastOrders=data.orders||[];
-      try{ renderProductCards&&renderProductCards(); }catch(e){}
-      try{ renderOrdersLast&&renderOrdersLast(); }catch(e){}
-      callAllLoaders();
-      try{ show('dashboard'); }catch(e){}
-    }).withFailureHandler(err=>{ console.error(err); try{ toast(err.message||err); }catch(e){}; }).bootstrapAll(tok);
-  };
-  document.addEventListener('DOMContentLoaded', ()=>{ const tok=localStorage.getItem(window.tokenKey); if(tok) window.init(); });
-})();
-</script>
