@@ -7032,3 +7032,83 @@ window.renderProductCards = function(){
 };
 </script>
 <!-- ===== FIN FIXES ===== -->
+
+
+<!-- ===== AUTO-BOOTSTRAP & GUARDS (FIX FINAL) ===== -->
+<script>
+(function(){
+  // --- Helper: asegurar arrays ---
+  function ensureArray(x){
+    if (Array.isArray(x)) return x;
+    if (x && Array.isArray(x.rows)) return x.rows;
+    return [];
+  }
+
+  // --- Guardas globales para renderizadores comunes ---
+  const _renderOrdersTable = window.renderOrdersTable;
+  if (typeof _renderOrdersTable === 'function') {
+    window.renderOrdersTable = function(rows){
+      return _renderOrdersTable.call(this, ensureArray(rows));
+    };
+  }
+
+  const _renderDeliveryTable = window.renderDeliveryTable || window.renderDeliveryOrders;
+  if (typeof _renderDeliveryTable === 'function') {
+    const fnName = window.renderDeliveryTable ? 'renderDeliveryTable' : 'renderDeliveryOrders';
+    const orig = window[fnName];
+    window[fnName] = function(rows){
+      return orig.call(this, ensureArray(rows));
+    };
+  }
+
+  const _renderRates = window.renderDeliveryCosts;
+  if (typeof _renderRates === 'function') {
+    window.renderDeliveryCosts = function(rows){
+      return _renderRates.call(this, ensureArray(rows));
+    };
+  }
+
+  // --- Bootstrap automático al iniciar sesión ---
+  async function bootstrapApp(){
+    const token = localStorage.getItem('DCANP_TOKEN');
+    if (!token) return;
+
+    google.script.run
+      .withSuccessHandler(user => {
+        window.me = user;
+
+        // Mostrar nav según rol (si existe handler previo, se respeta)
+        if (typeof window.applyRoleUI === 'function') {
+          try { window.applyRoleUI(user); } catch(e){ console.warn(e); }
+        }
+
+        // Cargas automáticas COMUNES
+        if (typeof window.loadCatalog === 'function') window.loadCatalog();
+        if (typeof window.refreshOrders === 'function') window.refreshOrders();
+        if (typeof window.refreshDashboard === 'function') window.refreshDashboard();
+
+        // Por rol
+        if (user.role === 'DELIVERY') {
+          if (typeof window.loadDeliveryOrders === 'function') window.loadDeliveryOrders();
+          if (typeof window.loadDeliveryCosts === 'function') window.loadDeliveryCosts();
+        }
+
+        if (user.role === 'ADMIN' || user.role === 'DESPACHANTE') {
+          if (typeof window.loadAllDelivery === 'function') window.loadAllDelivery();
+          if (typeof window.loadDeliveryCosts === 'function') window.loadDeliveryCosts();
+          if (typeof window.loadUsers === 'function') window.loadUsers();
+        }
+
+        if (user.role === 'PROVEEDOR') {
+          if (typeof window.loadCatalog === 'function') window.loadCatalog();
+          if (typeof window.refreshOrders === 'function') window.refreshOrders();
+        }
+      })
+      .withFailureHandler(console.error)
+      .me(token);
+  }
+
+  document.addEventListener('DOMContentLoaded', bootstrapApp);
+})();
+</script>
+<!-- ===== FIN FIX FINAL ===== -->
