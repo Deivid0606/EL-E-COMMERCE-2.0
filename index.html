@@ -7034,50 +7034,70 @@ window.renderProductCards = function(){
 <!-- ===== FIN FIXES ===== -->
 
 
-
-<!-- =========================
-     BOOTSTRAP FRONT (UNA SOLA LLAMADA)
-     ========================= -->
 <script>
-function init(){
-  const tok = localStorage.getItem(tokenKey || 'DCANP_TOKEN');
-  if (!tok) { show('auth'); return; }
-
-  google.script.run
-    .withSuccessHandler(data => {
-      window.me = data.me;
-
-      setUserBoxUI(me);
-      setNavForAuth(true, me.role);
-      const rc = document.getElementById('roleChip');
-      if (rc) rc.textContent = me.role;
-
-      const from='2020-01-01', to=new Date().toISOString().slice(0,10);
-      ['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','cl_from','rank_from']
-        .forEach(id=>document.getElementById(id)?.value=from);
-      ['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','cl_to','rank_to']
-        .forEach(id=>document.getElementById(id)?.value=to);
-
-      window.products = data.products || [];
-      window.lastOrders = data.orders || [];
-
-      if (typeof renderProductCards==='function') renderProductCards();
-      if (typeof renderOrdersLast==='function') renderOrdersLast();
-      if (typeof loadRatesUI==='function') loadRatesUI(data.deliveryFees||[], data.clientPrices||[]);
-      if (typeof renderWalletUI==='function') renderWalletUI(data.wallet||{});
-      if (typeof renderNewsUI==='function') renderNewsUI(data.news||[]);
-      if (typeof renderCommissionsTable==='function') renderCommissionsTable(data.commissions||[]);
-      if (typeof renderRankingDelivery==='function' && data.ranking) renderRankingDelivery(data.ranking);
-      if (typeof renderRendicionesPagadas==='function') renderRendicionesPagadas(data.rendiciones||[]);
-
-      show('dashboard');
-    })
-    .withFailureHandler(e => {
-      console.error(e);
-      show('auth');
-    })
-    .bootstrapApp(tok);
-}
-
-document.addEventListener('DOMContentLoaded', init);
+(function(){
+  function setWideRanges(){
+    const from='2020-01-01', to=new Date().toISOString().slice(0,10);
+    ['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','cl_from','rank_from'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=from; });
+    ['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','cl_to','rank_to'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=to; });
+  }
+  function paintRates(rows){
+    const tb=document.getElementById('rates_tbody'); if (!tb) return;
+    tb.innerHTML='';
+    (rows||[]).forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.email||''}</td><td>${r.city||''}</td><td class="right">${typeof nf==='function'?nf(r.rate_gs||0):(r.rate_gs||0)}</td>`; tb.appendChild(tr); });
+  }
+  function paintClientPrices(rows){
+    const tb=document.getElementById('client_prices_tbody'); if (!tb) return;
+    tb.innerHTML='';
+    (rows||[]).forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.city||''}</td><td class="right">${typeof nf==='function'?nf(r.price||0):(r.price||0)}</td>`; tb.appendChild(tr); });
+  }
+  function paintWallet(res){
+    const balEl=document.getElementById('w_balance'); if (balEl) balEl.textContent = typeof nf==='function'?nf(res?.balance_gs||0):(res?.balance_gs||0);
+    const tb=document.getElementById('wallet_tbody'); if (!tb) return;
+    tb.innerHTML='';
+    (res?.txs||[]).forEach(t=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${new Date(t.created_at).toLocaleString('es-PY')}</td><td>${t.type}</td><td>${t.order_id||''}</td><td class="right">${typeof nf==='function'?nf(t.amount_gs||0):(t.amount_gs||0)}</td><td>${t.note||''}</td>`; tb.appendChild(tr); });
+  }
+  function paintNews(rows){
+    const tb=document.getElementById('news_tbody'); if (!tb) return;
+    tb.innerHTML='';
+    (rows||[]).forEach(n=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${new Date(n.created_at).toLocaleString('es-PY')}</td><td>${n.order_id||''}</td><td>${n.type||''}</td><td>${n.note||''}</td>`; tb.appendChild(tr); });
+  }
+  window.init = function(){
+    const tok=localStorage.getItem(window.tokenKey||'DCANP_TOKEN');
+    if(!tok){ try{show('auth')}catch(e){}; return; }
+    google.script.run.withSuccessHandler(data=>{
+      window.me=data.me;
+      try{ setUserBoxUI(me);}catch(e){}
+      try{ setNavForAuth(true, me.role);}catch(e){}
+      const rc=document.getElementById('roleChip'); if(rc) rc.textContent=me.role;
+      setWideRanges();
+      window.products=data.products||[];
+      window.lastOrders=data.orders||[];
+      try{ renderProductCards(); }catch(e){}
+      try{ renderOrdersLast(); }catch(e){}
+      try{ paintRates(data.rates||[]);}catch(e){}
+      try{ paintClientPrices(data.clientPrices||[]);}catch(e){}
+      try{ paintWallet(data.wallet||{});}catch(e){}
+      try{ paintNews(data.news||[]);}catch(e){}
+      // Llamar loaders originales
+      try{ loadCatalog(); }catch(e){}
+      try{ refreshOrders(); }catch(e){}
+      try{ loadRates(); }catch(e){}
+      try{ loadClientPrices(); }catch(e){}
+      try{ refreshWallet(); }catch(e){}
+      try{ refreshNews(); }catch(e){}
+      try{ refreshDashboard(); }catch(e){}
+      try{
+        if(me.role==='VENDEDOR' && typeof loadCommissionsForVendor==='function') loadCommissionsForVendor();
+        else if(typeof loadCommissions==='function') loadCommissions();
+      }catch(e){}
+      try{ if((me.role==='ADMIN'||me.role==='PROVEEDOR') && typeof loadRendicionesPagadas==='function') loadRendicionesPagadas(); }catch(e){}
+      try{ if((me.role==='ADMIN'||me.role==='PROVEEDOR') && typeof loadPendingCommissionsKPIs==='function') loadPendingCommissionsKPIs(); }catch(e){}
+      try{ if(me.role==='DELIVERY' && typeof loadDeliveryProfit==='function') loadDeliveryProfit(); }catch(e){}
+      try{ if(typeof loadProvidersForFilters==='function') loadProvidersForFilters(); }catch(e){}
+      try{ show('dashboard'); }catch(e){}
+    }).withFailureHandler(err=>{ console.error(err); try{toast(err.message||err)}catch(e){}; try{show('auth')}catch(e){}; }).bootstrapApp(tok);
+  };
+  document.addEventListener('DOMContentLoaded', ()=>{ const tok=localStorage.getItem(window.tokenKey||'DCANP_TOKEN'); if(tok) window.init(); });
+})();
 </script>
