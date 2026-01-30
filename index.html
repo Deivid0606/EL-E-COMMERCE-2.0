@@ -2645,12 +2645,7 @@ vis('navProd', isAuthed && role!=='DELIVERY');
       me=res.user; setUserBoxUI(me); setNavForAuth(true, me.role);
       document.getElementById('roleChip').textContent = me.role;
 
-      const today=new Date(); const ymd=d=>d.toISOString().slice(0,10);
-      const wideFrom='2020-01-01'; const wideTo='2026-01-30';
-      // ✅ Rango amplio por defecto
-      ['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','cl_from','rank_from'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=wideFrom; });
-      ['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','cl_to','rank_to'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=wideTo; });
-
+      const today=new Date(); const ymd=d=>d.toISOString().slice(0,10); const d7=new Date(today.getTime()-6*24*3606*1000);
       ['dash_from','of_from','pc_from','pg_from','as_from'].forEach(id=>{ const el=document.getElementById(id); if (el) el.value = ymd(d7); });
       ['dash_to','of_to','pc_to','pg_to','as_to'].forEach(id=>{ const el=document.getElementById(id); if (el) el.value = ymd(today); });
       ['cl_from','cl_to'].forEach(id=>{ const el=document.getElementById(id); if (el) el.value = ymd(today); });
@@ -6941,86 +6936,116 @@ function renderPendingGuidesSimplified() {
 
 </div>
 
-<!-- ===== AUTO-LOAD POR PESTAÑA + PRELOAD AL LOGIN (FIX HOY) ===== -->
+<!-- ===== OVERRIDE INIT TOTAL: CARGA 100% AUTOMÁTICA Y SEGURA ===== -->
 <script>
 (function() {
-  function safeCall(fnName) {
+  // Helper: ejecutar sin romper el resto
+  function safeCall(fnName, ...args) {
     try {
       const fn = window[fnName];
-      if (typeof fn === 'function') fn();
-    } catch(e) {
-      console.warn('Auto-load fallo en', fnName, e);
+      if (typeof fn === 'function') return fn.apply(window, args);
+    } catch (e) {
+      console.warn('⚠️ Error en', fnName, e);
     }
   }
 
-  const _init = window.init;
-  if (typeof _init === 'function') {
-    window.init = function() {
-      _init.apply(this, arguments);
-      const t0 = Date.now();
-      (function waitMe() {
-        if (window.me && window.me.role) {
-          safeCall('loadCatalog');
-          safeCall('buildCityDropdown');
-          safeCall('refreshOrders');
-          safeCall('loadRates');
-          safeCall('loadClientPrices');
-          safeCall('refreshDashboard');
-          safeCall('refreshWallet');
-          safeCall('refreshNews');
+  // Setear rangos amplios para que no quede vacío por fechas
+  function setWideRanges() {
+    const wideFrom = '2020-01-01';
+    const wideTo = '2026-01-30';
+    const fromIds = ['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','cl_from','rank_from'];
+    const toIds   = ['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','cl_to','rank_to'];
+    fromIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.value = wideFrom; });
+    toIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.value = wideTo; });
+  }
 
-          if (me.role === 'DELIVERY') {
-            safeCall('loadDeliveryProfit');
-          }
-          if (me.role === 'ADMIN' || me.role === 'PROVEEDOR') {
-            safeCall('loadPendingCommissionsKPIs');
-            safeCall('loadDeliveriesForRendicionesPagadas');
-            safeCall('loadRendicionesPagadas');
-          }
-          if (me.role === 'ADMIN') {
-            safeCall('loadUsers');
-          }
-          safeCall('loadClosures');
-          return;
+  // Cargar TODO lo que existe, pero sin que una función rompa a las demás
+  function loadAllForRole(role) {
+    // Base (todos)
+    safeCall('loadCatalog');
+    safeCall('buildCityDropdown');
+    safeCall('refreshOrders');
+    safeCall('loadRates');
+    safeCall('loadClientPrices');
+    safeCall('refreshDashboard');
+    safeCall('refreshWallet');
+    safeCall('refreshNews');
+
+    // Cargas que existen en tu sistema (si están definidas)
+    safeCall('loadClosures');              // Cierres
+    safeCall('loadRendicionesPagadas');    // Rendiciones pagadas
+    safeCall('loadDeliveryRankingEnhanced'); // Ranking Delivery
+    safeCall('loadShopifyInbox');          // Shopify Inbox
+    safeCall('renderPendingGuidesSimplified'); // Pedidos con guías
+    safeCall('loadAssignableOrders');      // Asignar pedidos
+
+    // Filtros (admin/desp/proveedor)
+    if (role==='ADMIN' || role==='DESPACHANTE' || role==='PROVEEDOR') {
+      safeCall('loadProvidersForFilters');
+      safeCall('loadProvidersForGuidesFilter');
+      safeCall('loadVendorsForCommissionsFilter');
+    }
+
+    // Delivery KPI
+    if (role==='DELIVERY') {
+      safeCall('loadDeliveryProfit');
+    }
+
+    // Comisiones por rol
+    if (role==='VENDEDOR') {
+      safeCall('loadCommissionsForVendor');
+    } else {
+      safeCall('loadCommissions');
+    }
+
+    // Users solo admin
+    if (role==='ADMIN') {
+      safeCall('loadUsers');
+    }
+  }
+
+  // ✅ INIT NUEVO (reemplaza el viejo sin tocar backend)
+  window.init = function() {
+    const tok = localStorage.getItem(window.tokenKey || 'DCANP_TOKEN');
+    if (!tok) { try { window.openLogin && openLogin(); } catch(e){}; return; }
+
+    google.script.run
+      .withSuccessHandler(res => {
+        try {
+          if (!res || !res.authenticated) { try { window.openLogin && openLogin(); } catch(e){}; return; }
+          window.me = res.user;
+          safeCall('setUserBoxUI', window.me);
+          safeCall('setNavForAuth', true, window.me.role);
+          const rc = document.getElementById('roleChip'); if (rc) rc.textContent = window.me.role;
+
+          setWideRanges();
+
+          // Mostrar dashboard (como en WebApp) y cargar TODO
+          try { window.show && show('dashboard'); } catch(e){}
+
+          // Carga en 2 tandas para evitar “race”
+          loadAllForRole(window.me.role);
+          setTimeout(()=>loadAllForRole(window.me.role), 900);
+
+        } catch(e) {
+          console.error('INIT override error', e);
         }
-        if (Date.now() - t0 > 5000) return;
-        setTimeout(waitMe, 150);
-      })();
-    }
-  }
+      })
+      .withFailureHandler(err => {
+        console.error(err);
+        try { window.openLogin && openLogin(); } catch(e){}
+      })
+      .me(tok);
+  };
 
-  const _show = window.show;
-  if (typeof _show === 'function') {
-    window.show = function(view) {
-      _show.apply(this, arguments);
-      switch(String(view||'')) {
-        case 'dashboard': safeCall('refreshDashboard'); break;
-        case 'products':  safeCall('loadCatalog'); break;
-        case 'order':     safeCall('loadCatalog'); safeCall('buildCityDropdown'); break;
-        case 'orders':    safeCall('refreshOrders'); break;
-        case 'rates':     safeCall('loadRates'); safeCall('loadClientPrices'); break;
-        case 'wallet':    safeCall('refreshWallet'); break;
-        case 'news':      safeCall('refreshNews'); break;
-        case 'closures':  safeCall('loadRates'); safeCall('refreshOrders'); safeCall('loadClosures'); break;
-        case 'rendicionesPagadas': safeCall('loadDeliveriesForRendicionesPagadas'); safeCall('loadRendicionesPagadas'); break;
-        case 'rankingDelivery': safeCall('loadDeliveryRankingEnhanced'); break;
-        case 'users':     safeCall('loadUsers'); break;
-        case 'shopifyInbox': safeCall('loadShopifyInbox'); break;
-        default: break;
-      }
-    }
-  }
-
+  // Auto-init si ya hay sesión guardada
   document.addEventListener('DOMContentLoaded', () => {
-    try {
-      const key = window.tokenKey || 'DCANP_TOKEN';
-      const tok = localStorage.getItem(key);
-      if (tok && typeof window.init === 'function') window.init();
-    } catch(e) {}
+    const tok = localStorage.getItem(window.tokenKey || 'DCANP_TOKEN');
+    if (tok) setTimeout(()=>window.init(), 150);
   });
 })();
 </script>
-<!-- ===== FIN AUTO-LOAD ===== -->
+<!-- ===== FIN OVERRIDE INIT TOTAL ===== -->
 
 </body>
 </html>
@@ -7119,89 +7144,3 @@ window.renderProductCards = function(){
 };
 </script>
 <!-- ===== FIN FIXES ===== -->
-
-
-<!-- ===== PATCH FINAL: AUTO-CARGA INDEPENDIENTE (NO DEPENDE DE show/onclick) ===== -->
-<script>
-(function() {
-  function safe(fn, delay=0){
-    if (typeof fn !== 'function') return;
-    setTimeout(()=>{
-      try { fn(); } catch(e) { console.warn('Auto-load error', fn.name, e); }
-    }, delay);
-  }
-
-  function setWideRanges(){
-    const wideFrom='2020-01-01';
-    const wideTo='2026-01-30';
-    const fromIds=['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','cl_from','rank_from'];
-    const toIds  =['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','cl_to','rank_to'];
-    fromIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=wideFrom; });
-    toIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=wideTo; });
-  }
-
-  function refreshEverything(){
-    // base
-    safe(window.loadCatalog, 0);
-    safe(window.loadRates, 150);
-    safe(window.loadClientPrices, 300);
-    safe(window.refreshDashboard, 450);
-    safe(window.refreshWallet, 600);
-    safe(window.refreshNews, 750);
-    safe(window.refreshOrders, 900);
-
-    // commissions / closures / rendiciones / ranking / shopify
-    safe(window.loadCommissions, 1050);
-    safe(window.loadClosures, 1200);
-    safe(window.loadRendicionesPagadas, 1350);
-    safe(window.loadDeliveryRankingEnhanced, 1500);
-    safe(window.loadShopifyInbox, 1650);
-
-    // filters helpers (if exist)
-    safe(window.loadProvidersForFilters, 1800);
-    safe(window.loadVendorsForCommissionsFilter, 1950);
-    safe(window.loadProvidersForRankingFilter, 2100);
-    safe(window.loadProvidersForGuidesFilter, 2250);
-    safe(window.loadDeliveriesForRendicionesPagadas, 2400);
-
-    // per role extras
-    if (window.me && me.role) {
-      if (me.role==='DELIVERY') safe(window.loadDeliveryProfit, 2550);
-      if (me.role==='ADMIN' || me.role==='PROVEEDOR') safe(window.loadPendingCommissionsKPIs, 2700);
-      if (me.role==='ADMIN') safe(window.loadUsers, 2850);
-    }
-  }
-
-  // Wait until "me" exists, then set ranges and load everything.
-  function bootAfterLogin(){
-    const t0 = Date.now();
-    (function poll(){
-      if (window.me && me.role) {
-        setWideRanges();
-        refreshEverything();
-        return;
-      }
-      if (Date.now()-t0 > 6000) {
-        // even if me didn't attach, try anyway (will no-op where needed)
-        setWideRanges();
-        refreshEverything();
-        return;
-      }
-      setTimeout(poll, 120);
-    })();
-  }
-
-  document.addEventListener('DOMContentLoaded', ()=>{
-    // if session token exists, init() usually runs; but we still boot after it
-    bootAfterLogin();
-  });
-
-  // Hook login/register success by polling (no need to modify onLogin)
-  // Also run boot after any click on Login button (as a fallback)
-  document.addEventListener('click', (e)=>{
-    const id = (e.target && e.target.id) ? e.target.id : '';
-    if (id==='navLogin') setTimeout(bootAfterLogin, 200);
-  });
-})();
-</script>
-<!-- ===== FIN PATCH FINAL ===== -->
