@@ -7119,3 +7119,89 @@ window.renderProductCards = function(){
 };
 </script>
 <!-- ===== FIN FIXES ===== -->
+
+
+<!-- ===== PATCH FINAL: AUTO-CARGA INDEPENDIENTE (NO DEPENDE DE show/onclick) ===== -->
+<script>
+(function() {
+  function safe(fn, delay=0){
+    if (typeof fn !== 'function') return;
+    setTimeout(()=>{
+      try { fn(); } catch(e) { console.warn('Auto-load error', fn.name, e); }
+    }, delay);
+  }
+
+  function setWideRanges(){
+    const wideFrom='2020-01-01';
+    const wideTo='2026-01-30';
+    const fromIds=['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','cl_from','rank_from'];
+    const toIds  =['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','cl_to','rank_to'];
+    fromIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=wideFrom; });
+    toIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=wideTo; });
+  }
+
+  function refreshEverything(){
+    // base
+    safe(window.loadCatalog, 0);
+    safe(window.loadRates, 150);
+    safe(window.loadClientPrices, 300);
+    safe(window.refreshDashboard, 450);
+    safe(window.refreshWallet, 600);
+    safe(window.refreshNews, 750);
+    safe(window.refreshOrders, 900);
+
+    // commissions / closures / rendiciones / ranking / shopify
+    safe(window.loadCommissions, 1050);
+    safe(window.loadClosures, 1200);
+    safe(window.loadRendicionesPagadas, 1350);
+    safe(window.loadDeliveryRankingEnhanced, 1500);
+    safe(window.loadShopifyInbox, 1650);
+
+    // filters helpers (if exist)
+    safe(window.loadProvidersForFilters, 1800);
+    safe(window.loadVendorsForCommissionsFilter, 1950);
+    safe(window.loadProvidersForRankingFilter, 2100);
+    safe(window.loadProvidersForGuidesFilter, 2250);
+    safe(window.loadDeliveriesForRendicionesPagadas, 2400);
+
+    // per role extras
+    if (window.me && me.role) {
+      if (me.role==='DELIVERY') safe(window.loadDeliveryProfit, 2550);
+      if (me.role==='ADMIN' || me.role==='PROVEEDOR') safe(window.loadPendingCommissionsKPIs, 2700);
+      if (me.role==='ADMIN') safe(window.loadUsers, 2850);
+    }
+  }
+
+  // Wait until "me" exists, then set ranges and load everything.
+  function bootAfterLogin(){
+    const t0 = Date.now();
+    (function poll(){
+      if (window.me && me.role) {
+        setWideRanges();
+        refreshEverything();
+        return;
+      }
+      if (Date.now()-t0 > 6000) {
+        // even if me didn't attach, try anyway (will no-op where needed)
+        setWideRanges();
+        refreshEverything();
+        return;
+      }
+      setTimeout(poll, 120);
+    })();
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    // if session token exists, init() usually runs; but we still boot after it
+    bootAfterLogin();
+  });
+
+  // Hook login/register success by polling (no need to modify onLogin)
+  // Also run boot after any click on Login button (as a fallback)
+  document.addEventListener('click', (e)=>{
+    const id = (e.target && e.target.id) ? e.target.id : '';
+    if (id==='navLogin') setTimeout(bootAfterLogin, 200);
+  });
+})();
+</script>
+<!-- ===== FIN PATCH FINAL ===== -->
