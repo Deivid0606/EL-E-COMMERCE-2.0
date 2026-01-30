@@ -6935,118 +6935,6 @@ function renderPendingGuidesSimplified() {
 </script>
 
 </div>
-
-<!-- ===== OVERRIDE INIT TOTAL: CARGA 100% AUTOMÁTICA Y SEGURA ===== -->
-<script>
-(function() {
-  // Helper: ejecutar sin romper el resto
-  function safeCall(fnName, ...args) {
-    try {
-      const fn = window[fnName];
-      if (typeof fn === 'function') return fn.apply(window, args);
-    } catch (e) {
-      console.warn('⚠️ Error en', fnName, e);
-    }
-  }
-
-  // Setear rangos amplios para que no quede vacío por fechas
-  function setWideRanges() {
-    const wideFrom = '2020-01-01';
-    const wideTo = '2026-01-30';
-    const fromIds = ['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','cl_from','rank_from'];
-    const toIds   = ['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','cl_to','rank_to'];
-    fromIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.value = wideFrom; });
-    toIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.value = wideTo; });
-  }
-
-  // Cargar TODO lo que existe, pero sin que una función rompa a las demás
-  function loadAllForRole(role) {
-    // Base (todos)
-    safeCall('loadCatalog');
-    safeCall('buildCityDropdown');
-    safeCall('refreshOrders');
-    safeCall('loadRates');
-    safeCall('loadClientPrices');
-    safeCall('refreshDashboard');
-    safeCall('refreshWallet');
-    safeCall('refreshNews');
-
-    // Cargas que existen en tu sistema (si están definidas)
-    safeCall('loadClosures');              // Cierres
-    safeCall('loadRendicionesPagadas');    // Rendiciones pagadas
-    safeCall('loadDeliveryRankingEnhanced'); // Ranking Delivery
-    safeCall('loadShopifyInbox');          // Shopify Inbox
-    safeCall('renderPendingGuidesSimplified'); // Pedidos con guías
-    safeCall('loadAssignableOrders');      // Asignar pedidos
-
-    // Filtros (admin/desp/proveedor)
-    if (role==='ADMIN' || role==='DESPACHANTE' || role==='PROVEEDOR') {
-      safeCall('loadProvidersForFilters');
-      safeCall('loadProvidersForGuidesFilter');
-      safeCall('loadVendorsForCommissionsFilter');
-    }
-
-    // Delivery KPI
-    if (role==='DELIVERY') {
-      safeCall('loadDeliveryProfit');
-    }
-
-    // Comisiones por rol
-    if (role==='VENDEDOR') {
-      safeCall('loadCommissionsForVendor');
-    } else {
-      safeCall('loadCommissions');
-    }
-
-    // Users solo admin
-    if (role==='ADMIN') {
-      safeCall('loadUsers');
-    }
-  }
-
-  // ✅ INIT NUEVO (reemplaza el viejo sin tocar backend)
-  window.init = function() {
-    const tok = localStorage.getItem(window.tokenKey || 'DCANP_TOKEN');
-    if (!tok) { try { window.openLogin && openLogin(); } catch(e){}; return; }
-
-    google.script.run
-      .withSuccessHandler(res => {
-        try {
-          if (!res || !res.authenticated) { try { window.openLogin && openLogin(); } catch(e){}; return; }
-          window.me = res.user;
-          safeCall('setUserBoxUI', window.me);
-          safeCall('setNavForAuth', true, window.me.role);
-          const rc = document.getElementById('roleChip'); if (rc) rc.textContent = window.me.role;
-
-          setWideRanges();
-
-          // Mostrar dashboard (como en WebApp) y cargar TODO
-          try { window.show && show('dashboard'); } catch(e){}
-
-          // Carga en 2 tandas para evitar “race”
-          loadAllForRole(window.me.role);
-          setTimeout(()=>loadAllForRole(window.me.role), 900);
-
-        } catch(e) {
-          console.error('INIT override error', e);
-        }
-      })
-      .withFailureHandler(err => {
-        console.error(err);
-        try { window.openLogin && openLogin(); } catch(e){}
-      })
-      .me(tok);
-  };
-
-  // Auto-init si ya hay sesión guardada
-  document.addEventListener('DOMContentLoaded', () => {
-    const tok = localStorage.getItem(window.tokenKey || 'DCANP_TOKEN');
-    if (tok) setTimeout(()=>window.init(), 150);
-  });
-})();
-</script>
-<!-- ===== FIN OVERRIDE INIT TOTAL ===== -->
-
 </body>
 </html>
 
@@ -7144,3 +7032,52 @@ window.renderProductCards = function(){
 };
 </script>
 <!-- ===== FIN FIXES ===== -->
+
+
+
+<!-- =========================
+     BOOTSTRAP FRONT (UNA SOLA LLAMADA)
+     ========================= -->
+<script>
+function init(){
+  const tok = localStorage.getItem(tokenKey || 'DCANP_TOKEN');
+  if (!tok) { show('auth'); return; }
+
+  google.script.run
+    .withSuccessHandler(data => {
+      window.me = data.me;
+
+      setUserBoxUI(me);
+      setNavForAuth(true, me.role);
+      const rc = document.getElementById('roleChip');
+      if (rc) rc.textContent = me.role;
+
+      const from='2020-01-01', to=new Date().toISOString().slice(0,10);
+      ['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','cl_from','rank_from']
+        .forEach(id=>document.getElementById(id)?.value=from);
+      ['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','cl_to','rank_to']
+        .forEach(id=>document.getElementById(id)?.value=to);
+
+      window.products = data.products || [];
+      window.lastOrders = data.orders || [];
+
+      if (typeof renderProductCards==='function') renderProductCards();
+      if (typeof renderOrdersLast==='function') renderOrdersLast();
+      if (typeof loadRatesUI==='function') loadRatesUI(data.deliveryFees||[], data.clientPrices||[]);
+      if (typeof renderWalletUI==='function') renderWalletUI(data.wallet||{});
+      if (typeof renderNewsUI==='function') renderNewsUI(data.news||[]);
+      if (typeof renderCommissionsTable==='function') renderCommissionsTable(data.commissions||[]);
+      if (typeof renderRankingDelivery==='function' && data.ranking) renderRankingDelivery(data.ranking);
+      if (typeof renderRendicionesPagadas==='function') renderRendicionesPagadas(data.rendiciones||[]);
+
+      show('dashboard');
+    })
+    .withFailureHandler(e => {
+      console.error(e);
+      show('auth');
+    })
+    .bootstrapApp(tok);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
