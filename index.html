@@ -7034,81 +7034,161 @@ window.renderProductCards = function(){
 <!-- ===== FIN FIXES ===== -->
 
 
-<!-- ===== AUTO-BOOTSTRAP & GUARDS (FIX FINAL) ===== -->
+<!-- ===== PATCH URGENTE: AUTO-DATOS + PRODUCTOS + RANGOS AMPLIOS ===== -->
 <script>
-(function(){
-  // --- Helper: asegurar arrays ---
-  function ensureArray(x){
-    if (Array.isArray(x)) return x;
-    if (x && Array.isArray(x.rows)) return x.rows;
-    return [];
-  }
+(function() {
+  window.NO_IMG = window.NO_IMG || ("data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
+    <svg xmlns='http://www.w3.org/2000/svg' width='600' height='420'>
+      <rect width='100%' height='100%' fill='#0e0e16'/>
+      <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle'
+            fill='#9aa0b5' font-family='Arial' font-size='28'>Sin imagen</text>
+    </svg>`));
 
-  // --- Guardas globales para renderizadores comunes ---
-  const _renderOrdersTable = window.renderOrdersTable;
-  if (typeof _renderOrdersTable === 'function') {
-    window.renderOrdersTable = function(rows){
-      return _renderOrdersTable.call(this, ensureArray(rows));
-    };
-  }
+  window.renderProductCards = function() {
+    const grid = document.getElementById('prodGrid');
+    if (!grid) return;
 
-  const _renderDeliveryTable = window.renderDeliveryTable || window.renderDeliveryOrders;
-  if (typeof _renderDeliveryTable === 'function') {
-    const fnName = window.renderDeliveryTable ? 'renderDeliveryTable' : 'renderDeliveryOrders';
-    const orig = window[fnName];
-    window[fnName] = function(rows){
-      return orig.call(this, ensureArray(rows));
-    };
-  }
+    const role = (window.me && me.role) ? String(me.role).toUpperCase() : "";
+    const myEmail = (window.me && me.email) ? String(me.email).trim().toLowerCase() : "";
 
-  const _renderRates = window.renderDeliveryCosts;
-  if (typeof _renderRates === 'function') {
-    window.renderDeliveryCosts = function(rows){
-      return _renderRates.call(this, ensureArray(rows));
-    };
-  }
+    const qEl = document.getElementById('prod_q');
+    const q = (qEl && qEl.value ? qEl.value : '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .trim();
 
-  // --- Bootstrap automático al iniciar sesión ---
-  async function bootstrapApp(){
-    const token = localStorage.getItem('DCANP_TOKEN');
-    if (!token) return;
+    let filtered = Array.isArray(window.products) ? window.products.slice() : [];
 
-    google.script.run
-      .withSuccessHandler(user => {
-        window.me = user;
-
-        // Mostrar nav según rol (si existe handler previo, se respeta)
-        if (typeof window.applyRoleUI === 'function') {
-          try { window.applyRoleUI(user); } catch(e){ console.warn(e); }
+    if (window.currentProductTab === 'favoritos' && Array.isArray(window.userFavorites)) {
+      filtered = filtered.filter(p => window.userFavorites.includes(p.sku));
+    } else if (window.currentProductTab === 'privados') {
+      filtered = filtered.filter(p => {
+        const raw = String(p.private_to_emails || p.allowed_emails_json || '').trim();
+        if (!raw) return false;
+        let allowed = [];
+        try {
+          if (raw.startsWith('[')) allowed = JSON.parse(raw);
+          else allowed = raw.split(',');
+        } catch(e) {
+          allowed = raw.split(',');
         }
+        allowed = allowed.map(x => String(x||'').trim().toLowerCase()).filter(Boolean);
+        return myEmail && allowed.includes(myEmail);
+      });
+    }
 
-        // Cargas automáticas COMUNES
-        if (typeof window.loadCatalog === 'function') window.loadCatalog();
-        if (typeof window.refreshOrders === 'function') window.refreshOrders();
-        if (typeof window.refreshDashboard === 'function') window.refreshDashboard();
+    if (q) {
+      filtered = filtered.filter(p => {
+        const hay = [p.title||'', p.sku||'', p.provider_email||'']
+          .join(' ')
+          .toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+        return hay.includes(q);
+      });
+    }
 
-        // Por rol
-        if (user.role === 'DELIVERY') {
-          if (typeof window.loadDeliveryOrders === 'function') window.loadDeliveryOrders();
-          if (typeof window.loadDeliveryCosts === 'function') window.loadDeliveryCosts();
-        }
+    grid.innerHTML = '';
+    filtered.forEach(p => {
+      const isFavorite = Array.isArray(window.userFavorites) && window.userFavorites.includes(p.sku);
+      const div = document.createElement('div');
+      div.className = 'prod-card';
+      const imgSrc = (p.image_url && String(p.image_url).trim()) ? p.image_url : window.NO_IMG;
 
-        if (user.role === 'ADMIN' || user.role === 'DESPACHANTE') {
-          if (typeof window.loadAllDelivery === 'function') window.loadAllDelivery();
-          if (typeof window.loadDeliveryCosts === 'function') window.loadDeliveryCosts();
-          if (typeof window.loadUsers === 'function') window.loadUsers();
-        }
+      div.innerHTML = `
+        <img class="prod-img" src="${imgSrc}" onerror="this.src=window.NO_IMG">
+        <div class="prod-body">
+          <div class="prod-title">${p.title||''}</div>
+          <div class="prod-meta">
+            <span class="badge">SKU: ${p.sku||''}</span>
+            <span class="badge">Stock: ${Number(p.stock||0)}</span>
+            ${p.provider_email ? `<span class="badge">Prov: ${p.provider_email}</span>` : ''}
+          </div>
+        </div>
+        <div class="prod-footer">
+          <button class="btn-icon favorite-btn" onclick="toggleFavorite('${p.sku}'); event.stopPropagation()"
+            title="${isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}">
+            ${isFavorite ? '★' : '☆'}
+          </button>
+          <div class="price-info">
+            <span class="muted">Gs ${(typeof nf==='function') ? nf(p.provider_price_gs||0) : (p.provider_price_gs||0)}</span>
+          </div>
+          <div class="action-buttons">
+            <button class="btn small" onclick="openProductModal('${p.sku||''}'); event.stopPropagation()">Ver</button>
+            ${(role==='ADMIN' || role==='DESPACHANTE' || role==='PROVEEDOR')
+              ? `<button class="btn small warning" onclick="openEditProductModal('${p.id}'); event.stopPropagation()">Editar</button>`
+              : ''}
+          </div>
+        </div>
+      `;
+      div.onclick = () => window.openProductModal && openProductModal(p.sku||'');
+      grid.appendChild(div);
+    });
+  };
 
-        if (user.role === 'PROVEEDOR') {
-          if (typeof window.loadCatalog === 'function') window.loadCatalog();
-          if (typeof window.refreshOrders === 'function') window.refreshOrders();
-        }
-      })
-      .withFailureHandler(console.error)
-      .me(token);
+  document.addEventListener('DOMContentLoaded', () => {
+    const pm = document.getElementById('pm_img');
+    if (pm) pm.onerror = () => { pm.src = window.NO_IMG; };
+  });
+
+  function setWideRanges() {
+    const wideFrom = '2020-01-01';
+    const wideTo = '2026-01-30';
+    const idsFrom = ['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','rank_from','cl_from'];
+    const idsTo   = ['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','rank_to','cl_to'];
+
+    idsFrom.forEach(id => { const el = document.getElementById(id); if (el) el.value = wideFrom; });
+    idsTo.forEach(id => { const el = document.getElementById(id); if (el) el.value = wideTo; });
   }
 
-  document.addEventListener('DOMContentLoaded', bootstrapApp);
+  function refreshAll() {
+    if (typeof window.loadCatalog === 'function') window.loadCatalog();
+    if (typeof window.refreshOrders === 'function') window.refreshOrders();
+    if (typeof window.loadRates === 'function') window.loadRates();
+    if (typeof window.loadClientPrices === 'function') window.loadClientPrices();
+    if (typeof window.refreshDashboard === 'function') window.refreshDashboard();
+    if (typeof window.refreshWallet === 'function') window.refreshWallet();
+    if (typeof window.refreshNews === 'function') window.refreshNews();
+
+    if (typeof window.loadRendicionesPagadas === 'function') window.loadRendicionesPagadas();
+    if (typeof window.loadProvidersForFilters === 'function') window.loadProvidersForFilters();
+    if (typeof window.loadVendorsForCommissionsFilter === 'function') window.loadVendorsForCommissionsFilter();
+    if (typeof window.loadProvidersForRankingFilter === 'function') window.loadProvidersForRankingFilter();
+    if (typeof window.loadDeliveriesForRendicionesPagadas === 'function') window.loadDeliveriesForRendicionesPagadas();
+    if (typeof window.loadProvidersForGuidesFilter === 'function') window.loadProvidersForGuidesFilter();
+    if (typeof window.loadPendingCommissionsKPIs === 'function') window.loadPendingCommissionsKPIs();
+    if (typeof window.loadDeliveryProfit === 'function') window.loadDeliveryProfit();
+    if (typeof window.loadDeliveryRankingEnhanced === 'function') window.loadDeliveryRankingEnhanced();
+    if (typeof window.loadUsers === 'function') window.loadUsers();
+  }
+
+  const origInit = window.init;
+  if (typeof origInit === 'function') {
+    window.init = function() {
+      origInit.apply(this, arguments);
+      const t0 = Date.now();
+      (function waitReady() {
+        if (window.me && window.me.authenticated !== false) {
+          setWideRanges();
+          refreshAll();
+          return;
+        }
+        if (Date.now() - t0 > 4000) {
+          setWideRanges();
+          refreshAll();
+          return;
+        }
+        setTimeout(waitReady, 150);
+      })();
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const key = window.tokenKey || 'DCANP_TOKEN';
+    const tok = localStorage.getItem(key);
+    if (tok && typeof window.init === 'function') {
+      window.init();
+    }
+  });
 })();
 </script>
-<!-- ===== FIN FIX FINAL ===== -->
+<!-- ===== FIN PATCH URGENTE ===== -->
