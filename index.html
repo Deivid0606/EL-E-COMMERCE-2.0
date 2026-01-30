@@ -7036,68 +7036,48 @@ window.renderProductCards = function(){
 
 <script>
 (function(){
+  if (!window.tokenKey) window.tokenKey = 'DCANP_TOKEN';
   function setWideRanges(){
-    const from='2020-01-01', to=new Date().toISOString().slice(0,10);
-    ['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','cl_from','rank_from'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=from; });
-    ['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','cl_to','rank_to'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=to; });
+    const from='2020-01-01', to='2026-01-30';
+    ['dash_from','of_from','pc_from','sb_from','cl_from','rank_from','rp_from'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=from; });
+    ['dash_to','of_to','pc_to','sb_to','cl_to','rank_to','rp_to'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=to; });
   }
-  function paintRates(rows){
-    const tb=document.getElementById('rates_tbody'); if (!tb) return;
-    tb.innerHTML='';
-    (rows||[]).forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.email||''}</td><td>${r.city||''}</td><td class="right">${typeof nf==='function'?nf(r.rate_gs||0):(r.rate_gs||0)}</td>`; tb.appendChild(tr); });
-  }
-  function paintClientPrices(rows){
-    const tb=document.getElementById('client_prices_tbody'); if (!tb) return;
-    tb.innerHTML='';
-    (rows||[]).forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.city||''}</td><td class="right">${typeof nf==='function'?nf(r.price||0):(r.price||0)}</td>`; tb.appendChild(tr); });
-  }
-  function paintWallet(res){
-    const balEl=document.getElementById('w_balance'); if (balEl) balEl.textContent = typeof nf==='function'?nf(res?.balance_gs||0):(res?.balance_gs||0);
-    const tb=document.getElementById('wallet_tbody'); if (!tb) return;
-    tb.innerHTML='';
-    (res?.txs||[]).forEach(t=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${new Date(t.created_at).toLocaleString('es-PY')}</td><td>${t.type}</td><td>${t.order_id||''}</td><td class="right">${typeof nf==='function'?nf(t.amount_gs||0):(t.amount_gs||0)}</td><td>${t.note||''}</td>`; tb.appendChild(tr); });
-  }
-  function paintNews(rows){
-    const tb=document.getElementById('news_tbody'); if (!tb) return;
-    tb.innerHTML='';
-    (rows||[]).forEach(n=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${new Date(n.created_at).toLocaleString('es-PY')}</td><td>${n.order_id||''}</td><td>${n.type||''}</td><td>${n.note||''}</td>`; tb.appendChild(tr); });
+  function callAllLoaders(){
+    try{ loadCatalog&&loadCatalog(); }catch(e){}
+    try{ refreshOrders&&refreshOrders(); }catch(e){}
+    try{ loadRates&&loadRates(); }catch(e){}
+    try{ loadClientPrices&&loadClientPrices(); }catch(e){}
+    try{ refreshWallet&&refreshWallet(); }catch(e){}
+    try{ refreshNews&&refreshNews(); }catch(e){}
+    try{ refreshDashboard&&refreshDashboard(); }catch(e){}
+    try{ loadClosuresDetailed&&loadClosuresDetailed(); }catch(e){}
+    try{ if (me?.role==='VENDEDOR' && loadCommissionsForVendor) loadCommissionsForVendor(); else if (loadCommissions) loadCommissions(); }catch(e){}
+    try{ loadRendicionesPagadas&&loadRendicionesPagadas(); }catch(e){}
+    try{ loadDeliveryRankingEnhanced&&loadDeliveryRankingEnhanced(); }catch(e){}
+    try{ loadAssignableOrders&&loadAssignableOrders(); }catch(e){}
+    try{ renderPendingGuidesSimplified&&renderPendingGuidesSimplified(); }catch(e){}
+    try{ loadShopifyInbox&&loadShopifyInbox(); }catch(e){}
+    try{ loadChat&&loadChat(); }catch(e){}
+    try{ onOpenProfile&&onOpenProfile(); }catch(e){}
+    try{ loadUsers&&loadUsers(); }catch(e){}
   }
   window.init = function(){
-    const tok=localStorage.getItem(window.tokenKey||'DCANP_TOKEN');
-    if(!tok){ try{show('auth')}catch(e){}; return; }
+    const tok=localStorage.getItem(window.tokenKey);
+    if(!tok){ try{ show('auth'); }catch(e){}; return; }
     google.script.run.withSuccessHandler(data=>{
       window.me=data.me;
-      try{ setUserBoxUI(me);}catch(e){}
-      try{ setNavForAuth(true, me.role);}catch(e){}
+      try{ setUserBoxUI(me); }catch(e){}
+      try{ setNavForAuth(true, me.role); }catch(e){}
       const rc=document.getElementById('roleChip'); if(rc) rc.textContent=me.role;
       setWideRanges();
       window.products=data.products||[];
       window.lastOrders=data.orders||[];
-      try{ renderProductCards(); }catch(e){}
-      try{ renderOrdersLast(); }catch(e){}
-      try{ paintRates(data.rates||[]);}catch(e){}
-      try{ paintClientPrices(data.clientPrices||[]);}catch(e){}
-      try{ paintWallet(data.wallet||{});}catch(e){}
-      try{ paintNews(data.news||[]);}catch(e){}
-      // Llamar loaders originales
-      try{ loadCatalog(); }catch(e){}
-      try{ refreshOrders(); }catch(e){}
-      try{ loadRates(); }catch(e){}
-      try{ loadClientPrices(); }catch(e){}
-      try{ refreshWallet(); }catch(e){}
-      try{ refreshNews(); }catch(e){}
-      try{ refreshDashboard(); }catch(e){}
-      try{
-        if(me.role==='VENDEDOR' && typeof loadCommissionsForVendor==='function') loadCommissionsForVendor();
-        else if(typeof loadCommissions==='function') loadCommissions();
-      }catch(e){}
-      try{ if((me.role==='ADMIN'||me.role==='PROVEEDOR') && typeof loadRendicionesPagadas==='function') loadRendicionesPagadas(); }catch(e){}
-      try{ if((me.role==='ADMIN'||me.role==='PROVEEDOR') && typeof loadPendingCommissionsKPIs==='function') loadPendingCommissionsKPIs(); }catch(e){}
-      try{ if(me.role==='DELIVERY' && typeof loadDeliveryProfit==='function') loadDeliveryProfit(); }catch(e){}
-      try{ if(typeof loadProvidersForFilters==='function') loadProvidersForFilters(); }catch(e){}
+      try{ renderProductCards&&renderProductCards(); }catch(e){}
+      try{ renderOrdersLast&&renderOrdersLast(); }catch(e){}
+      callAllLoaders();
       try{ show('dashboard'); }catch(e){}
-    }).withFailureHandler(err=>{ console.error(err); try{toast(err.message||err)}catch(e){}; try{show('auth')}catch(e){}; }).bootstrapApp(tok);
+    }).withFailureHandler(err=>{ console.error(err); try{ toast(err.message||err); }catch(e){}; }).bootstrapAll(tok);
   };
-  document.addEventListener('DOMContentLoaded', ()=>{ const tok=localStorage.getItem(window.tokenKey||'DCANP_TOKEN'); if(tok) window.init(); });
+  document.addEventListener('DOMContentLoaded', ()=>{ const tok=localStorage.getItem(window.tokenKey); if(tok) window.init(); });
 })();
 </script>
