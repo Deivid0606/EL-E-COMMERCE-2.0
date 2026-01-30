@@ -2645,7 +2645,12 @@ vis('navProd', isAuthed && role!=='DELIVERY');
       me=res.user; setUserBoxUI(me); setNavForAuth(true, me.role);
       document.getElementById('roleChip').textContent = me.role;
 
-      const today=new Date(); const ymd=d=>d.toISOString().slice(0,10); const d7=new Date(today.getTime()-6*24*3606*1000);
+      const today=new Date(); const ymd=d=>d.toISOString().slice(0,10);
+      const wideFrom='2020-01-01'; const wideTo='2026-01-30';
+      // ✅ Rango amplio por defecto
+      ['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','cl_from','rank_from'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=wideFrom; });
+      ['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','cl_to','rank_to'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=wideTo; });
+
       ['dash_from','of_from','pc_from','pg_from','as_from'].forEach(id=>{ const el=document.getElementById(id); if (el) el.value = ymd(d7); });
       ['dash_to','of_to','pc_to','pg_to','as_to'].forEach(id=>{ const el=document.getElementById(id); if (el) el.value = ymd(today); });
       ['cl_from','cl_to'].forEach(id=>{ const el=document.getElementById(id); if (el) el.value = ymd(today); });
@@ -6935,6 +6940,88 @@ function renderPendingGuidesSimplified() {
 </script>
 
 </div>
+
+<!-- ===== AUTO-LOAD POR PESTAÑA + PRELOAD AL LOGIN (FIX HOY) ===== -->
+<script>
+(function() {
+  function safeCall(fnName) {
+    try {
+      const fn = window[fnName];
+      if (typeof fn === 'function') fn();
+    } catch(e) {
+      console.warn('Auto-load fallo en', fnName, e);
+    }
+  }
+
+  const _init = window.init;
+  if (typeof _init === 'function') {
+    window.init = function() {
+      _init.apply(this, arguments);
+      const t0 = Date.now();
+      (function waitMe() {
+        if (window.me && window.me.role) {
+          safeCall('loadCatalog');
+          safeCall('buildCityDropdown');
+          safeCall('refreshOrders');
+          safeCall('loadRates');
+          safeCall('loadClientPrices');
+          safeCall('refreshDashboard');
+          safeCall('refreshWallet');
+          safeCall('refreshNews');
+
+          if (me.role === 'DELIVERY') {
+            safeCall('loadDeliveryProfit');
+          }
+          if (me.role === 'ADMIN' || me.role === 'PROVEEDOR') {
+            safeCall('loadPendingCommissionsKPIs');
+            safeCall('loadDeliveriesForRendicionesPagadas');
+            safeCall('loadRendicionesPagadas');
+          }
+          if (me.role === 'ADMIN') {
+            safeCall('loadUsers');
+          }
+          safeCall('loadClosures');
+          return;
+        }
+        if (Date.now() - t0 > 5000) return;
+        setTimeout(waitMe, 150);
+      })();
+    }
+  }
+
+  const _show = window.show;
+  if (typeof _show === 'function') {
+    window.show = function(view) {
+      _show.apply(this, arguments);
+      switch(String(view||'')) {
+        case 'dashboard': safeCall('refreshDashboard'); break;
+        case 'products':  safeCall('loadCatalog'); break;
+        case 'order':     safeCall('loadCatalog'); safeCall('buildCityDropdown'); break;
+        case 'orders':    safeCall('refreshOrders'); break;
+        case 'rates':     safeCall('loadRates'); safeCall('loadClientPrices'); break;
+        case 'wallet':    safeCall('refreshWallet'); break;
+        case 'news':      safeCall('refreshNews'); break;
+        case 'closures':  safeCall('loadRates'); safeCall('refreshOrders'); safeCall('loadClosures'); break;
+        case 'rendicionesPagadas': safeCall('loadDeliveriesForRendicionesPagadas'); safeCall('loadRendicionesPagadas'); break;
+        case 'rankingDelivery': safeCall('loadDeliveryRankingEnhanced'); break;
+        case 'users':     safeCall('loadUsers'); break;
+        case 'shopifyInbox': safeCall('loadShopifyInbox'); break;
+        default: break;
+      }
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    try {
+      const key = window.tokenKey || 'DCANP_TOKEN';
+      const tok = localStorage.getItem(key);
+      if (tok && typeof window.init === 'function') window.init();
+    } catch(e) {}
+  });
+})();
+</script>
+<!-- ===== FIN AUTO-LOAD ===== -->
+
 </body>
 </html>
 
@@ -7032,163 +7119,3 @@ window.renderProductCards = function(){
 };
 </script>
 <!-- ===== FIN FIXES ===== -->
-
-
-<!-- ===== PATCH URGENTE: AUTO-DATOS + PRODUCTOS + RANGOS AMPLIOS ===== -->
-<script>
-(function() {
-  window.NO_IMG = window.NO_IMG || ("data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
-    <svg xmlns='http://www.w3.org/2000/svg' width='600' height='420'>
-      <rect width='100%' height='100%' fill='#0e0e16'/>
-      <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle'
-            fill='#9aa0b5' font-family='Arial' font-size='28'>Sin imagen</text>
-    </svg>`));
-
-  window.renderProductCards = function() {
-    const grid = document.getElementById('prodGrid');
-    if (!grid) return;
-
-    const role = (window.me && me.role) ? String(me.role).toUpperCase() : "";
-    const myEmail = (window.me && me.email) ? String(me.email).trim().toLowerCase() : "";
-
-    const qEl = document.getElementById('prod_q');
-    const q = (qEl && qEl.value ? qEl.value : '')
-      .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-      .trim();
-
-    let filtered = Array.isArray(window.products) ? window.products.slice() : [];
-
-    if (window.currentProductTab === 'favoritos' && Array.isArray(window.userFavorites)) {
-      filtered = filtered.filter(p => window.userFavorites.includes(p.sku));
-    } else if (window.currentProductTab === 'privados') {
-      filtered = filtered.filter(p => {
-        const raw = String(p.private_to_emails || p.allowed_emails_json || '').trim();
-        if (!raw) return false;
-        let allowed = [];
-        try {
-          if (raw.startsWith('[')) allowed = JSON.parse(raw);
-          else allowed = raw.split(',');
-        } catch(e) {
-          allowed = raw.split(',');
-        }
-        allowed = allowed.map(x => String(x||'').trim().toLowerCase()).filter(Boolean);
-        return myEmail && allowed.includes(myEmail);
-      });
-    }
-
-    if (q) {
-      filtered = filtered.filter(p => {
-        const hay = [p.title||'', p.sku||'', p.provider_email||'']
-          .join(' ')
-          .toLowerCase()
-          .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-        return hay.includes(q);
-      });
-    }
-
-    grid.innerHTML = '';
-    filtered.forEach(p => {
-      const isFavorite = Array.isArray(window.userFavorites) && window.userFavorites.includes(p.sku);
-      const div = document.createElement('div');
-      div.className = 'prod-card';
-      const imgSrc = (p.image_url && String(p.image_url).trim()) ? p.image_url : window.NO_IMG;
-
-      div.innerHTML = `
-        <img class="prod-img" src="${imgSrc}" onerror="this.src=window.NO_IMG">
-        <div class="prod-body">
-          <div class="prod-title">${p.title||''}</div>
-          <div class="prod-meta">
-            <span class="badge">SKU: ${p.sku||''}</span>
-            <span class="badge">Stock: ${Number(p.stock||0)}</span>
-            ${p.provider_email ? `<span class="badge">Prov: ${p.provider_email}</span>` : ''}
-          </div>
-        </div>
-        <div class="prod-footer">
-          <button class="btn-icon favorite-btn" onclick="toggleFavorite('${p.sku}'); event.stopPropagation()"
-            title="${isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}">
-            ${isFavorite ? '★' : '☆'}
-          </button>
-          <div class="price-info">
-            <span class="muted">Gs ${(typeof nf==='function') ? nf(p.provider_price_gs||0) : (p.provider_price_gs||0)}</span>
-          </div>
-          <div class="action-buttons">
-            <button class="btn small" onclick="openProductModal('${p.sku||''}'); event.stopPropagation()">Ver</button>
-            ${(role==='ADMIN' || role==='DESPACHANTE' || role==='PROVEEDOR')
-              ? `<button class="btn small warning" onclick="openEditProductModal('${p.id}'); event.stopPropagation()">Editar</button>`
-              : ''}
-          </div>
-        </div>
-      `;
-      div.onclick = () => window.openProductModal && openProductModal(p.sku||'');
-      grid.appendChild(div);
-    });
-  };
-
-  document.addEventListener('DOMContentLoaded', () => {
-    const pm = document.getElementById('pm_img');
-    if (pm) pm.onerror = () => { pm.src = window.NO_IMG; };
-  });
-
-  function setWideRanges() {
-    const wideFrom = '2020-01-01';
-    const wideTo = '2026-01-30';
-    const idsFrom = ['dash_from','of_from','pc_from','pg_from','as_from','sb_from','rp_from','rank_from','cl_from'];
-    const idsTo   = ['dash_to','of_to','pc_to','pg_to','as_to','sb_to','rp_to','rank_to','cl_to'];
-
-    idsFrom.forEach(id => { const el = document.getElementById(id); if (el) el.value = wideFrom; });
-    idsTo.forEach(id => { const el = document.getElementById(id); if (el) el.value = wideTo; });
-  }
-
-  function refreshAll() {
-    if (typeof window.loadCatalog === 'function') window.loadCatalog();
-    if (typeof window.refreshOrders === 'function') window.refreshOrders();
-    if (typeof window.loadRates === 'function') window.loadRates();
-    if (typeof window.loadClientPrices === 'function') window.loadClientPrices();
-    if (typeof window.refreshDashboard === 'function') window.refreshDashboard();
-    if (typeof window.refreshWallet === 'function') window.refreshWallet();
-    if (typeof window.refreshNews === 'function') window.refreshNews();
-
-    if (typeof window.loadRendicionesPagadas === 'function') window.loadRendicionesPagadas();
-    if (typeof window.loadProvidersForFilters === 'function') window.loadProvidersForFilters();
-    if (typeof window.loadVendorsForCommissionsFilter === 'function') window.loadVendorsForCommissionsFilter();
-    if (typeof window.loadProvidersForRankingFilter === 'function') window.loadProvidersForRankingFilter();
-    if (typeof window.loadDeliveriesForRendicionesPagadas === 'function') window.loadDeliveriesForRendicionesPagadas();
-    if (typeof window.loadProvidersForGuidesFilter === 'function') window.loadProvidersForGuidesFilter();
-    if (typeof window.loadPendingCommissionsKPIs === 'function') window.loadPendingCommissionsKPIs();
-    if (typeof window.loadDeliveryProfit === 'function') window.loadDeliveryProfit();
-    if (typeof window.loadDeliveryRankingEnhanced === 'function') window.loadDeliveryRankingEnhanced();
-    if (typeof window.loadUsers === 'function') window.loadUsers();
-  }
-
-  const origInit = window.init;
-  if (typeof origInit === 'function') {
-    window.init = function() {
-      origInit.apply(this, arguments);
-      const t0 = Date.now();
-      (function waitReady() {
-        if (window.me && window.me.authenticated !== false) {
-          setWideRanges();
-          refreshAll();
-          return;
-        }
-        if (Date.now() - t0 > 4000) {
-          setWideRanges();
-          refreshAll();
-          return;
-        }
-        setTimeout(waitReady, 150);
-      })();
-    }
-  }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    const key = window.tokenKey || 'DCANP_TOKEN';
-    const tok = localStorage.getItem(key);
-    if (tok && typeof window.init === 'function') {
-      window.init();
-    }
-  });
-})();
-</script>
-<!-- ===== FIN PATCH URGENTE ===== -->
