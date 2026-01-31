@@ -7009,5 +7009,98 @@ function renderPendingGuidesSimplified() {
 })();
 </script>
 
+
+<!-- ===== BOOT FORZADO (NO DEPENDE DE init/onLogin EXISTENTES) ===== -->
+<script>
+(function(){
+  const TOKEN_KEY = window.tokenKey || 'DCANP_TOKEN';
+  const WIDE_FROM = '2020-01-01';
+  const WIDE_TO = '2026-01-31';
+  let booted = false;
+
+  function setWideRanges(){
+    const fromIds=['dash_from','of_from','pc_from','pg_from','sb_from','cl_from','rank_from','rp_from'];
+    const toIds=['dash_to','of_to','pc_to','pg_to','sb_to','cl_to','rank_to','rp_to'];
+    fromIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=WIDE_FROM; });
+    toIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=WIDE_TO; });
+  }
+
+  function safe(name){
+    try{ const fn=window[name]; if(typeof fn==='function') fn(); }catch(e){ console.warn('boot error', name, e); }
+  }
+
+  function roleLoaders(){
+    const role=String(window.me?.role||'').toUpperCase();
+    if(role==='VENDEDOR'){ safe('loadCommissionsForVendor'); safe('loadShopifyInbox'); }
+    else if(role!=='DELIVERY'){ safe('loadCommissions'); }
+    if(role==='ADMIN'||role==='PROVEEDOR'){ safe('loadRendicionesPagadas'); safe('loadPendingCommissionsKPIs'); }
+    if(role==='DELIVERY'){ safe('loadDeliveryProfit'); }
+    if(role==='ADMIN'){ safe('loadUsers'); }
+  }
+
+  function loadAll(){
+    setWideRanges();
+    safe('loadCatalog');
+    safe('loadRates');
+    safe('loadClientPrices');
+    safe('refreshOrders');
+    safe('refreshDashboard');
+    safe('refreshWallet');
+    safe('refreshNews');
+    safe('loadClosures');
+    safe('renderPendingGuidesSimplified');
+    safe('loadDeliveryRankingEnhanced');
+    safe('loadAssignableOrders');
+    safe('onOpenProfile');
+    safe('loadChat');
+    roleLoaders();
+  }
+
+  function boot(){
+    if(booted) return;
+    const tok = localStorage.getItem(TOKEN_KEY);
+    if(!tok) return;
+
+    try{
+      google.script.run
+        .withSuccessHandler(res=>{
+          if(!res || res.authenticated===false) return;
+          window.me = res.user || res;
+          try{ setUserBoxUI(window.me); }catch(e){}
+          try{ setNavForAuth(true, window.me.role); }catch(e){}
+          const rc=document.getElementById('roleChip'); if(rc) rc.textContent = window.me.role;
+          loadAll();
+          setTimeout(loadAll, 1500);
+          booted = true;
+        })
+        .withFailureHandler(err=>{
+          console.error('BOOT me() failed', err);
+        })
+        .me(tok);
+    } catch(e) {
+      console.error('BOOT exception', e);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    boot();
+    const iv = setInterval(()=>{
+      if(booted) return clearInterval(iv);
+      boot();
+    }, 500);
+  });
+
+  const _onLogin = window.onLogin;
+  if(typeof _onLogin==='function'){
+    window.onLogin = function(){
+      const r = _onLogin.apply(this, arguments);
+      setTimeout(()=>boot(), 700);
+      return r;
+    }
+  }
+})();
+</script>
+<!-- ===== FIN BOOT FORZADO ===== -->
+
 </body>
 </html>
