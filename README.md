@@ -1,35 +1,12 @@
-# DCANP GROUP - Cloudflare Pages + Apps Script + Google Sheets
+# DCANP Cloudflare Fix (/api/gas)
 
-## 1) Qué hay aquí
-- `index.html`: tu frontend completo
-- `functions/api/gas.js`: proxy server-side para llamar a tu Web App de Apps Script sin problemas de CORS
+1) Add this file to your repo:
+   functions/api/gas.js
 
-El frontend llama a **/api/gas** y Cloudflare lo reenvía a Apps Script.
+2) Cloudflare Pages -> Settings -> Environment variables:
+   GAS_WEBAPP_URL = https://script.google.com/macros/s/AKfycbxtnA_nSCxGPl4ArmLE0_UaODYB-VE1ak3CH8jN97iWVVAXDIsnAr6JnzrKMXq1YpvzBw/exec
+   DCANP_SECRET   = (optional) same as Apps Script Script Property DCANP_SECRET
 
-## 2) Variables de entorno en Cloudflare Pages
-En Cloudflare Pages → tu proyecto → Settings → Environment variables:
-
-- `GAS_WEBAPP_URL` = `https://script.google.com/macros/s/XXXXXXXXXXXX/exec`
-- `DCANP_SECRET` = (el mismo valor que guardaste en Apps Script como Script Property `DCANP_SECRET`)
-
-> Si no usás secreto, podés dejar `DCANP_SECRET` vacío y también borrar/ignorar la validación del secret en Apps Script.
-
-## 3) Deploy de Apps Script (muy importante)
-Deploy → New deployment → Web app
-- Execute as: **Me**
-- Who has access: **Anyone**
-Copiá la URL que termina en **/exec** y pegala como `GAS_WEBAPP_URL`.
-
-## 4) Publicar con GitHub
-1. Creá un repo y subí estos archivos.
-2. En Cloudflare Pages → Create project → Conectar GitHub → elegir repo
-3. Build settings:
-   - Framework preset: **None**
-   - Build command: *(vacío)*
-   - Output directory: `/` (root)
-
-Listo.
-
-## 5) Endpoint
-- Frontend: `/`
-- API proxy: `/api/gas` (POST JSON: `{ fn: "nombreFuncion", args: [...] }`)
+3) Deploy. Test:
+   fetch("/api/gas", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({fn:"ping", args:[]})})
+     .then(r=>r.text()).then(console.log).catch(console.error);
