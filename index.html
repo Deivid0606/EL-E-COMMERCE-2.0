@@ -7002,7 +7002,7 @@ function renderPendingGuidesSimplified() {
   }
 
   document.addEventListener('DOMContentLoaded', ()=>{
-    const key=window.tokenKey||'DCANP_TOKEN';
+    const key=window.tokenKey||'skyline_token';
     const tok=localStorage.getItem(key);
     if(tok){ try{ window.init(); }catch(e){} }
   });
@@ -7013,7 +7013,7 @@ function renderPendingGuidesSimplified() {
 <!-- ===== BOOT FORZADO (NO DEPENDE DE init/onLogin EXISTENTES) ===== -->
 <script>
 (function(){
-  const TOKEN_KEY = window.tokenKey || 'DCANP_TOKEN';
+  const TOKEN_KEY = window.tokenKey || 'skyline_token';
   const WIDE_FROM = '2020-01-01';
   const WIDE_TO = '2026-01-31';
   let booted = false;
